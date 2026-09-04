@@ -42,7 +42,33 @@ selected on validation data.
 - Future experiments use the same validation split and select models by
   validation macro-F1.
 
-## Next experiment
+## Experiment 02: BERTweet fine-tuning
 
-Fine-tune `vinai/bertweet-base` on TweetEval sentiment using the exact same
-split and macro-F1 model-selection metric.
+This trains `vinai/bertweet-base`, a tweet-specialized BERT-base model, on the
+TweetEval training split. The best checkpoint is selected by **validation
+macro-F1**; the test split is never loaded for this experiment.
+
+In the same Colab runtime, run:
+
+```bash
+!pip install -q -r requirements.txt
+!python src/train_bertweet.py
+```
+
+The default configuration is four epochs, learning rate `2e-5`, batch sizes 16
+and 32, `max_length=128`, linear warmup/decay, and fp16 automatically enabled
+when Colab provides a CUDA GPU. Output is written to:
+
+```text
+artifacts/bertweet/best_model/
+artifacts/bertweet/validation_report.json
+```
+
+If a T4 runs out of memory, rerun with a smaller training batch size:
+
+```bash
+!python src/train_bertweet.py --train-batch-size 8 --eval-batch-size 16
+```
+
+Do not run on the official test split until choosing this configuration and any
+hyperparameter variants using validation macro-F1.
