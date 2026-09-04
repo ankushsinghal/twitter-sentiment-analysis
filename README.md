@@ -124,3 +124,16 @@ model:
 Replace `seed_42` with the selected run. The resulting JSON report contains
 test accuracy, macro-F1, weighted F1, per-class metrics, and a confusion matrix.
 Do not use this test score to select hyperparameters or choose a different seed.
+
+If a test result is unexpectedly low, first verify that the saved model was
+selected and copied correctly by replaying validation with the exact same model:
+
+```bash
+!python src/evaluate_test.py \
+  --model-dir artifacts/bertweet/seed_42/best_model \
+  --split validation \
+  --output artifacts/bertweet/seed_42/validation_replay_report.json
+```
+
+Its macro-F1 should match the run's `validation_report.json` within small
+floating-point differences. This diagnostic does not touch the test split.

@@ -1,4 +1,4 @@
-"""Evaluate one selected BERTweet checkpoint on TweetEval's official test set."""
+"""Evaluate one selected BERTweet checkpoint on a TweetEval split."""
 
 from __future__ import annotations
 
@@ -29,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument(
+        "--split",
+        choices=("validation", "test"),
+        default="test",
+        help="Evaluation split. Use validation to verify a saved checkpoint; use test once for final reporting.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("artifacts/bertweet/test_report.json"),
@@ -51,7 +57,7 @@ def main() -> None:
         raise FileNotFoundError(f"Saved model directory not found: {args.model_dir}")
 
     raw_dataset = load_dataset(DATASET_ID, DATASET_CONFIG)
-    test_dataset = raw_dataset["test"]
+    evaluation_dataset = raw_dataset[args.split]
     label_names = list(raw_dataset["train"].features["label"].names)
     labels = list(range(len(label_names)))
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir, normalization=True)
@@ -63,9 +69,9 @@ def main() -> None:
     def tokenize(examples: dict[str, list[str]]) -> dict[str, Any]:
         return tokenizer(examples["text"], truncation=True, max_length=128)
 
-    tokenized_test = test_dataset.map(tokenize, batched=True, remove_columns=["text"])
+    tokenized_evaluation = evaluation_dataset.map(tokenize, batched=True, remove_columns=["text"])
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
-    data_loader = DataLoader(tokenized_test, batch_size=args.batch_size, collate_fn=collator)
+    data_loader = DataLoader(tokenized_evaluation, batch_size=args.batch_size, collate_fn=collator)
 
     all_logits: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
@@ -80,14 +86,14 @@ def main() -> None:
     references = np.concatenate(all_labels)
     predictions = np.argmax(np.concatenate(all_logits), axis=-1)
     report = {
-        "experiment": "bertweet_official_test_evaluation",
+        "experiment": f"bertweet_{args.split}_evaluation",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "dataset": DATASET_ID,
         "configuration": DATASET_CONFIG,
-        "evaluated_split": "test",
+        "evaluated_split": args.split,
         "model_dir": str(args.model_dir),
         "inference_device": str(device),
-        "test_examples": len(references),
+        "evaluation_examples": len(references),
         "metrics": {
             "accuracy": accuracy_score(references, predictions),
             "macro_f1": f1_score(references, predictions, labels=labels, average="macro", zero_division=0),
@@ -107,9 +113,9 @@ def main() -> None:
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     metrics = report["metrics"]
-    print(f"Test accuracy:    {metrics['accuracy']:.4f}")
-    print(f"Test macro F1:    {metrics['macro_f1']:.4f}")
-    print(f"Test weighted F1: {metrics['weighted_f1']:.4f}")
+    print(f"{args.split.title()} accuracy:    {metrics['accuracy']:.4f}")
+    print(f"{args.split.title()} macro F1:    {metrics['macro_f1']:.4f}")
+    print(f"{args.split.title()} weighted F1: {metrics['weighted_f1']:.4f}")
     print(f"Saved report: {args.output}")
 
 
