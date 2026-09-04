@@ -9,11 +9,15 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import torch
 from datasets import load_dataset
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
-from torch.utils.data import DataLoader
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    Trainer,
+    TrainingArguments,
+)
 
 DATASET_ID = "cardiffnlp/tweet_eval"
 DATASET_CONFIG = "sentiment"
@@ -43,14 +47,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def device_for_inference() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
 def main() -> None:
     args = parse_args()
     if not args.model_dir.is_dir():
@@ -62,29 +58,26 @@ def main() -> None:
     labels = list(range(len(label_names)))
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir, normalization=True)
     model = AutoModelForSequenceClassification.from_pretrained(args.model_dir)
-    device = device_for_inference()
-    model.to(device)
-    model.eval()
 
     def tokenize(examples: dict[str, list[str]]) -> dict[str, Any]:
         return tokenizer(examples["text"], truncation=True, max_length=128)
 
     tokenized_evaluation = evaluation_dataset.map(tokenize, batched=True, remove_columns=["text"])
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
-    data_loader = DataLoader(tokenized_evaluation, batch_size=args.batch_size, collate_fn=collator)
-
-    all_logits: list[np.ndarray] = []
-    all_labels: list[np.ndarray] = []
-    with torch.inference_mode():
-        for batch in data_loader:
-            references = batch.pop("labels")
-            batch = {name: values.to(device) for name, values in batch.items()}
-            logits = model(**batch).logits
-            all_logits.append(logits.cpu().numpy())
-            all_labels.append(references.numpy())
-
-    references = np.concatenate(all_labels)
-    predictions = np.argmax(np.concatenate(all_logits), axis=-1)
+    evaluation_args = TrainingArguments(
+        output_dir=str(args.output.parent / ".evaluation_tmp"),
+        per_device_eval_batch_size=args.batch_size,
+        report_to="none",
+    )
+    evaluator = Trainer(
+        model=model,
+        args=evaluation_args,
+        data_collator=collator,
+        processing_class=tokenizer,
+    )
+    output = evaluator.predict(tokenized_evaluation)
+    references = output.label_ids
+    predictions = np.argmax(output.predictions, axis=-1)
     report = {
         "experiment": f"bertweet_{args.split}_evaluation",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -92,7 +85,7 @@ def main() -> None:
         "configuration": DATASET_CONFIG,
         "evaluated_split": args.split,
         "model_dir": str(args.model_dir),
-        "inference_device": str(device),
+        "inference_device": str(evaluator.args.device),
         "evaluation_examples": len(references),
         "metrics": {
             "accuracy": accuracy_score(references, predictions),
