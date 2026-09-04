@@ -107,3 +107,20 @@ Aggregate the three validation reports:
 This writes `artifacts/bertweet/seed_summary.json` with each run's metrics and
 the mean ± sample standard deviation. Use that summary to decide whether this
 configuration is good enough to evaluate once on the official test set.
+
+## Final experiment: official test evaluation
+
+After fixing the configuration based on validation results, choose one saved
+model (normally the run with the highest validation macro-F1) and evaluate it
+once on the official test split. This command does not train or modify the
+model:
+
+```bash
+!python src/evaluate_test.py \
+  --model-dir artifacts/bertweet/seed_42/best_model \
+  --output artifacts/bertweet/test_report.json
+```
+
+Replace `seed_42` with the selected run. The resulting JSON report contains
+test accuracy, macro-F1, weighted F1, per-class metrics, and a confusion matrix.
+Do not use this test score to select hyperparameters or choose a different seed.
