@@ -188,7 +188,7 @@ def main() -> None:
         args=training_args,
         train_dataset=tokenized_dataset["train"],
         eval_dataset=tokenized_dataset["validation"],
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
         data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
         compute_metrics=compute_metrics_factory(label_names),
         callbacks=[EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience)],
@@ -198,8 +198,28 @@ def main() -> None:
     model_dir = args.output_dir / "best_model"
     trainer.save_model(str(model_dir))
     tokenizer.save_pretrained(str(model_dir))
-    output = trainer.predict(tokenized_dataset["validation"])
+
+    # Always score the on-disk artifact. It prevents reporting a strong score
+    # for an in-memory model while accidentally saving different weights.
+    reloaded_model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+    verification_args = TrainingArguments(
+        output_dir=str(args.output_dir / ".save_verification"),
+        per_device_eval_batch_size=args.eval_batch_size,
+        report_to="none",
+    )
+    verifier = Trainer(
+        model=reloaded_model,
+        args=verification_args,
+        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
+        tokenizer=tokenizer,
+    )
+    output = verifier.predict(tokenized_dataset["validation"])
     report = validation_report(output.predictions, output.label_ids, label_names, args, trainer)
+    if abs(report["metrics"]["macro_f1"] - trainer.state.best_metric) > 0.01:
+        raise RuntimeError(
+            "The saved model did not reproduce the selected validation macro-F1. "
+            "The run has been stopped so an invalid artifact is not used."
+        )
     report_path = args.output_dir / "validation_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 

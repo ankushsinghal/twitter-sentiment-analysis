@@ -73,7 +73,7 @@ def main() -> None:
         model=model,
         args=evaluation_args,
         data_collator=collator,
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
     )
     output = evaluator.predict(tokenized_evaluation)
     references = output.label_ids

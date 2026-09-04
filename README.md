@@ -55,6 +55,11 @@ In the same Colab runtime, run:
 !python src/train_bertweet.py
 ```
 
+If Colab already has a different Transformers version loaded, use **Runtime →
+Restart session** after installation, then run the training command. The project
+pins Transformers 4.46.3 so the saved checkpoint is reproducible across the
+training and standalone evaluation paths.
+
 The Hugging Face unauthenticated-download warning is optional: downloading this
 public model works without a token. You may authenticate with an HF token to
 avoid rate limits when repeating runs.
