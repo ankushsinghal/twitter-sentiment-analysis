@@ -76,3 +76,34 @@ If a T4 runs out of memory, rerun with a smaller training batch size:
 
 Do not run on the official test split until choosing this configuration and any
 hyperparameter variants using validation macro-F1.
+
+### Repeat across three random seeds
+
+Run each seed into its own directory, so no model or report is overwritten. If
+your completed seed-42 run is still in `artifacts/bertweet/`, first preserve it:
+
+```bash
+!mkdir -p artifacts/bertweet/seed_42
+!cp artifacts/bertweet/validation_report.json artifacts/bertweet/seed_42/
+!cp -r artifacts/bertweet/best_model artifacts/bertweet/seed_42/
+```
+
+Then run the two additional seeds:
+
+```bash
+!python src/train_bertweet.py --seed 13 --output-dir artifacts/bertweet/seed_13
+!python src/train_bertweet.py --seed 2026 --output-dir artifacts/bertweet/seed_2026
+```
+
+Aggregate the three validation reports:
+
+```bash
+!python src/aggregate_seed_reports.py \
+  --reports artifacts/bertweet/seed_13/validation_report.json \
+            artifacts/bertweet/seed_42/validation_report.json \
+            artifacts/bertweet/seed_2026/validation_report.json
+```
+
+This writes `artifacts/bertweet/seed_summary.json` with each run's metrics and
+the mean ± sample standard deviation. Use that summary to decide whether this
+configuration is good enough to evaluate once on the official test set.
