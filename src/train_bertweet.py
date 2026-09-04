@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
+import math
 import random
 from datetime import datetime, timezone
 from pathlib import Path
@@ -121,6 +123,44 @@ def validation_report(
     }
 
 
+def make_training_arguments(args: argparse.Namespace, train_examples: int) -> TrainingArguments:
+    """Build TrainingArguments across compatible Transformers releases.
+
+    Some Colab images expose ``warmup_steps`` but not ``warmup_ratio``. The
+    equivalent number of warmup steps is used in that case.
+    """
+    argument_names = inspect.signature(TrainingArguments).parameters
+    steps_per_epoch = math.ceil(train_examples / args.train_batch_size)
+    warmup_steps = math.ceil(steps_per_epoch * args.epochs * args.warmup_ratio)
+    training_kwargs: dict[str, Any] = {
+        "output_dir": str(args.output_dir / "checkpoints"),
+        "learning_rate": args.learning_rate,
+        "per_device_train_batch_size": args.train_batch_size,
+        "per_device_eval_batch_size": args.eval_batch_size,
+        "num_train_epochs": args.epochs,
+        "weight_decay": args.weight_decay,
+        "lr_scheduler_type": "linear",
+        "save_strategy": "epoch",
+        "logging_strategy": "steps",
+        "logging_steps": 50,
+        "save_total_limit": 2,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "macro_f1",
+        "greater_is_better": True,
+        "fp16": args.use_fp16,
+        "report_to": "none",
+        "seed": args.seed,
+    }
+    training_kwargs["eval_strategy" if "eval_strategy" in argument_names else "evaluation_strategy"] = "epoch"
+    if "warmup_ratio" in argument_names:
+        training_kwargs["warmup_ratio"] = args.warmup_ratio
+    else:
+        training_kwargs["warmup_steps"] = warmup_steps
+    if "data_seed" in argument_names:
+        training_kwargs["data_seed"] = args.seed
+    return TrainingArguments(**training_kwargs)
+
+
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
@@ -142,28 +182,7 @@ def main() -> None:
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    training_args = TrainingArguments(
-        output_dir=str(args.output_dir / "checkpoints"),
-        learning_rate=args.learning_rate,
-        per_device_train_batch_size=args.train_batch_size,
-        per_device_eval_batch_size=args.eval_batch_size,
-        num_train_epochs=args.epochs,
-        weight_decay=args.weight_decay,
-        warmup_ratio=args.warmup_ratio,
-        lr_scheduler_type="linear",
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        logging_strategy="steps",
-        logging_steps=50,
-        save_total_limit=2,
-        load_best_model_at_end=True,
-        metric_for_best_model="macro_f1",
-        greater_is_better=True,
-        fp16=args.use_fp16,
-        report_to="none",
-        seed=args.seed,
-        data_seed=args.seed,
-    )
+    training_args = make_training_arguments(args, len(tokenized_dataset["train"]))
     trainer = Trainer(
         model=model,
         args=training_args,

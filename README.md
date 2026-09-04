@@ -55,6 +55,10 @@ In the same Colab runtime, run:
 !python src/train_bertweet.py
 ```
 
+The Hugging Face unauthenticated-download warning is optional: downloading this
+public model works without a token. You may authenticate with an HF token to
+avoid rate limits when repeating runs.
+
 The default configuration is four epochs, learning rate `2e-5`, batch sizes 16
 and 32, `max_length=128`, linear warmup/decay, and fp16 automatically enabled
 when Colab provides a CUDA GPU. Output is written to:
